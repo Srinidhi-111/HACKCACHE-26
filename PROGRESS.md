@@ -6,3 +6,7 @@ Storage: localStorage (events) + IndexedDB (evidence). Tabs sync through Broadca
 
 Next stages: 2 escalation engine + demo date + authority chains; 3 role views (citizen/official/reviewer/public) through one function per role;
 4 AI draft with demo fallback; 5 legal help + next steps + case summary; 6 README, video, deck.
+
+Stage 2 done: escalation engine. src/data/config.js (deadlines), src/data/authorities.js (sample chains), src/lib/escalation.js (computeState, notices),
+store.js now has the demo clock, a write lock, runEscalations, and the Anti-Corruption Bureau parallel referral. App.jsx has the status panel, official actions, Demo date buttons.
+Next: stage 3 role views (citizen/official/reviewer/public) through one function per role.

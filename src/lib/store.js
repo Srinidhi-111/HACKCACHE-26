@@ -1,5 +1,6 @@
 import { GENESIS, hashEvent, sha256Bytes } from "./hash";
 import { SEED } from "../data/seed";
+import { computeState, escalationNotice, topNotice } from "./escalation";
 
 const KEY = "jd_events";
 const DB = "jd_evidence";
@@ -55,10 +56,21 @@ async function clearFiles() {
   });
 }
 
+
+// ---------- demo clock: "today" can be moved forward to show deadlines passing ----------
+const OFFSET = "jd_offset_days";
+export const getOffset = () => Number(localStorage.getItem(OFFSET) || 0);
+export const nowMs = () => Date.now() + getOffset() * 86400000;
+export const nowIso = () => new Date(nowMs()).toISOString();
+export function addDays(n) { localStorage.setItem(OFFSET, String(getOffset() + n)); ping(); }
+
+// One tab at a time may write, so two open tabs cannot add the same entry twice.
+const withLock = (fn) => (typeof navigator !== "undefined" && navigator.locks ? navigator.locks.request("jd-record", fn) : fn());
+
 // ---------- the append-only record ----------
 // There is no edit and no delete function in this file, on purpose.
 // A correction or withdrawal is just another event added to the end.
-export async function appendEvent(complaintId, type, actor, data = {}, file = null) {
+async function appendLocked(complaintId, type, actor, data = {}, file = null, at = nowIso()) {
   const events = loadEvents();
   const mine = events.filter((e) => e.complaintId === complaintId);
   const last = mine[mine.length - 1];
@@ -71,15 +83,17 @@ export async function appendEvent(complaintId, type, actor, data = {}, file = nu
     payload = { ...payload, fileName: file.name, size: file.size, sha256: await sha256Bytes(buf) };
     await putFile(id, buf); // file is stored first, then the event that points to it
   }
-  const body = { complaintId, seq, type, actor, at: new Date().toISOString(), data: payload };
+  const body = { complaintId, seq, type, actor, at, data: payload };
   const hash = await hashEvent(prevHash, body);
   save([...loadEvents(), { id, ...body, prevHash, hash }]);
   return id;
 }
+export const appendEvent = (...a) => withLock(() => appendLocked(...a));
 
 export async function createComplaint(meta, id) {
   const cid = id || `JD-2026-${String(Math.floor(100000 + Math.random() * 899999)).slice(0, 6)}`;
   await appendEvent(cid, "submitted", "Citizen (Sunita, sample)", meta);
+  if (meta.category === "Bribe demand") await appendEvent(cid, "parallel_referral", "System (automatic)", { note: "Also sent to the State Anti-Corruption Bureau, in parallel. The main chain continues." });
   return cid;
 }
 
@@ -116,6 +130,32 @@ export function tamper(complaintId) {
   return target.seq;
 }
 
+
+// Writes an "escalated" (or "reached_top") entry for every complaint whose deadline has passed.
+// The entry is dated at the deadline itself, so a big jump in demo date still gives the right number of steps.
+export function runEscalations() {
+  return withLock(async () => {
+    for (let guard = 0; guard < 200; guard++) {
+      let did = false;
+      const ids = [...new Set(loadEvents().filter((e) => e.type === "submitted").map((e) => e.complaintId))];
+      for (const id of ids) {
+        const evs = loadEvents().filter((e) => e.complaintId === id).sort((a, b) => a.seq - b.seq);
+        const st = computeState(evs, nowMs());
+        if (!st.due) continue;
+        const at = new Date(st.due.at).toISOString();
+        if (!st.isLast) {
+          const to = st.chain[st.level + 1];
+          await appendLocked(id, "escalated", "System (automatic)", { fromLevel: st.level, toLevel: st.level + 1, from: st.office, to, reason: st.due.reason, notice: escalationNotice(st.office, to, st.due.reason, st.due.at) }, null, at);
+        } else {
+          await appendLocked(id, "reached_top", "System (automatic)", { notice: topNotice(st.office, st.due.at) }, null, at);
+        }
+        did = true;
+      }
+      if (!did) break;
+    }
+  });
+}
+
 let seeding = null;
 export function seedIfEmpty() {
   if (loadEvents().length) return Promise.resolve();
@@ -132,6 +172,7 @@ export function seedIfEmpty() {
 
 export async function resetDemo() {
   localStorage.removeItem(KEY);
+  localStorage.removeItem(OFFSET);
   await clearFiles();
   await seedIfEmpty();
   ping();
