@@ -1,5 +1,21 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-body { font-size: 16px; background: #f8fafc; color: #0f172a; }
-button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid #1d4ed8; outline-offset: 2px; }
+
+@layer base {
+  body { @apply bg-paper text-ink font-sans antialiased; font-size: 16px; line-height: 1.55; }
+  h1, h2, h3 { @apply font-serif font-medium text-ink; letter-spacing: -0.01em; }
+  :focus-visible { outline: 3px solid #14213D; outline-offset: 2px; }
+  a { @apply underline-offset-2; }
+}
+@layer components {
+  .btn { @apply inline-flex items-center justify-center min-h-12 px-5 rounded border border-ink bg-panel text-ink font-medium no-underline hover:bg-tint disabled:opacity-50 disabled:cursor-not-allowed text-center; }
+  .btn-main { @apply inline-flex items-center justify-center min-h-12 px-5 rounded border border-ink bg-ink text-paper font-medium no-underline hover:bg-[#1f2f55] disabled:opacity-50 disabled:cursor-not-allowed text-center; }
+  .field { @apply w-full min-h-12 rounded border border-ink/40 bg-panel px-3 text-ink; }
+  textarea.field { @apply py-2; }
+  .card { @apply rounded border border-rule bg-panel p-4; }
+  .lbl { @apply text-xs uppercase tracking-wider text-muted font-medium; }
+  .mono { @apply font-mono; font-size: 0.8rem; }
+  .chip { @apply inline-block rounded-sm bg-tint text-[#3A4560] px-1.5 py-px font-mono; font-size: 0.72rem; }
+}
+@media print { .no-print { display: none !important; } body { background: white; } }

@@ -20,3 +20,8 @@ src/lib/flags.js (duplicate, coordinated, missing-info flags for the reviewer). 
 Stage 5 done: src/Legal.jsx (next steps, Section 12 check, free options first, made-up lawyer directory, printable case summary), src/data/legal.js, src/data/legalaid.js.
 vercel.json now leaves /api/* alone. Add ANTHROPIC_API_KEY in Vercel project settings to switch the real AI on (optional).
 Next: UI pass (case-file look), then stage 6: README, demo script, deck, final link checks.
+
+UI pass done (case-file look): paper/ink/stamp-red tokens in tailwind.config.js, fonts in index.html, shared classes in src/index.css.
+src/App.jsx is now the shell (demo bar, header, hash routes, 112 footer); src/Pages.jsx has Home, lists, complaint page with the seal, admin tools;
+src/ReportForm.jsx is a 4-step flow ending in an acknowledgement slip; src/ui.jsx has Status and Seal. Routes: #/ #/report #/complaints #/complaint/ID #/legal #/public #/office #/review #/admin.
+Next: stage 6 (README, demo script, final link checks), retake deck screenshots.

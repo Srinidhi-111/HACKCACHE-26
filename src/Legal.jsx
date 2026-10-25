@@ -3,7 +3,7 @@ import { ROUTES, NOTE } from "./data/legal";
 import { SECTION_12, INCOME_NOTE, FREE_OPTIONS, LAWYERS } from "./data/legalaid";
 import { LABEL } from "./lib/labels";
 
-const input = "w-full min-h-12 border border-slate-400 rounded-lg px-3 bg-white";
+const input = "field";
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const uniq = (a) => ["Any", ...new Set(a)];
 
@@ -42,55 +42,55 @@ export default function Legal({ view }) {
   const toggle = (c) => setChecks(checks.includes(c) ? checks.filter((x) => x !== c) : [...checks, c]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10 max-w-3xl">
       <section className="space-y-3">
-        <h2 className="text-xl font-bold">Next steps outside this system</h2>
-        <p className="text-sm rounded bg-amber-100 border border-amber-400 p-2 font-semibold">{NOTE}</p>
-        {view && <button className="min-h-12 px-4 rounded-lg font-semibold bg-blue-800 text-white w-full" onClick={() => openCaseSummary(view)}>Prepare my case summary for a lawyer</button>}
+        <h1 className="text-3xl">Next steps outside this system</h1>
+        <p className="text-sm rounded border border-ink/40 bg-tint p-3 font-medium">{NOTE}</p>
+        {view && <button className="btn-main w-full" onClick={() => openCaseSummary(view)}>Prepare my case summary for a lawyer</button>}
         {routes.map((r) => (
-          <details key={r.id} className="rounded-lg border border-slate-300 bg-white p-3">
-            <summary className="font-semibold cursor-pointer min-h-8">{r.title}</summary>
+          <details key={r.id} className="card">
+            <summary className="font-medium cursor-pointer min-h-8">{r.title}</summary>
             <p className="text-sm mt-2">{r.plain}</p>
             <ol className="list-decimal ml-5 text-sm mt-2 space-y-1">{r.steps.map((s) => <li key={s}>{s}</li>)}</ol>
-            <p className="text-sm font-semibold mt-2">Documents to gather</p>
+            <p className="text-sm font-medium mt-2">Documents to gather</p>
             <ul className="list-disc ml-5 text-sm">{r.documents.map((d) => <li key={d}>{d}</li>)}</ul>
-            <p className="text-sm mt-2">Source: {r.sources.map((s, i) => <span key={s.label}>{i ? ", " : ""}{s.url ? <a className="text-blue-800 underline" href={s.url} target="_blank" rel="noreferrer">{s.label}</a> : s.label}</span>)}</p>
-            <p className="text-xs text-slate-600 mt-1">{NOTE}</p>
+            <p className="text-sm mt-2">Source: {r.sources.map((s, i) => <span key={s.label}>{i ? ", " : ""}{s.url ? <a className="text-ink underline" href={s.url} target="_blank" rel="noreferrer">{s.label}</a> : s.label}</span>)}</p>
+            <p className="text-xs text-muted mt-1">{NOTE}</p>
           </details>
         ))}
         <label className="flex items-center gap-2 text-sm min-h-12"><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> Show all routes, not only those for my complaint</label>
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-xl font-bold">Free legal aid check</h2>
+        <h2 className="text-2xl">Free legal aid check</h2>
         <p className="text-sm">Under Section 12 of the Legal Services Authorities Act, 1987, some people get free legal aid. Tick anything that applies.</p>
         {SECTION_12.map((c) => <label key={c} className="flex items-center gap-2 min-h-12"><input type="checkbox" checked={checks.includes(c)} onChange={() => toggle(c)} /> {c}</label>)}
-        <p className="text-xs text-slate-600">{INCOME_NOTE}</p>
-        <p role="status" className="rounded-lg border border-slate-400 bg-slate-50 p-3 font-semibold">{checks.length ? "You may qualify for free legal aid. Start with the free options below. The DLSA makes the final decision." : "Not sure? Ask your DLSA. They decide eligibility. The free options are listed first either way."}</p>
+        <p className="text-xs text-muted">{INCOME_NOTE}</p>
+        <p role="status" className="rounded border border-ink/40 bg-tint p-3 font-medium">{checks.length ? "You may qualify for free legal aid. Start with the free options below. The DLSA makes the final decision." : "Not sure? Ask your DLSA. They decide eligibility. The free options are listed first either way."}</p>
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-xl font-bold">Free options first</h2>
+        <h2 className="text-2xl">Free options first</h2>
         {FREE_OPTIONS.map((o) => (
-          <div key={o.name} className="rounded-lg border border-green-700 bg-white p-3">
-            <p className="font-semibold">{o.name} <span className="text-xs font-semibold rounded bg-green-100 border border-green-700 px-2 py-0.5 ml-1">{o.label}</span></p>
+          <div key={o.name} className="card border-ink">
+            <p className="font-medium">{o.name} <span className="chip ml-1 bg-ink text-paper">{o.label}</span></p>
             <p className="text-sm">{o.how}</p>
           </div>
         ))}
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-xl font-bold">Find a lawyer</h2>
-        <p className="text-xs text-slate-600">All lawyers listed here are made up for this demo.</p>
+        <h2 className="text-2xl">Find a lawyer</h2>
+        <p className="text-xs text-muted">All lawyers listed here are made up for this demo.</p>
         <div className="grid grid-cols-2 gap-2">
           {[["City", city, setCity, uniq(LAWYERS.map((l) => l.city))], ["Specialisation", area, setArea, uniq(LAWYERS.map((l) => l.area))], ["Language", lang, setLang, uniq(LAWYERS.flatMap((l) => l.languages))], ["Format", fmt, setFmt, uniq(LAWYERS.flatMap((l) => l.formats))]].map(([lab, val, set, opts]) => (
-            <div key={lab}><label htmlFor={"lw-" + lab} className="text-sm font-semibold block">{lab}</label><select id={"lw-" + lab} className={input} value={val} onChange={(e) => set(e.target.value)}>{opts.map((o) => <option key={o}>{o}</option>)}</select></div>
+            <div key={lab}><label htmlFor={"lw-" + lab} className="text-sm font-medium block">{lab}</label><select id={"lw-" + lab} className={input} value={val} onChange={(e) => set(e.target.value)}>{opts.map((o) => <option key={o}>{o}</option>)}</select></div>
           ))}
         </div>
         {!lawyers.length && <p className="text-sm">No lawyers match. Try "Any" in one of the filters.</p>}
         {lawyers.map((l) => (
-          <div key={l.name} className="rounded-lg border border-slate-300 bg-white p-3">
-            <p className="font-semibold">{l.name} <span className={"text-xs font-semibold rounded px-2 py-0.5 ml-1 border " + (l.label === "Paid" ? "bg-slate-100 border-slate-500" : "bg-green-100 border-green-700")}>{l.label}</span></p>
+          <div key={l.name} className="card">
+            <p className="font-medium">{l.name} <span className={"chip ml-1 " + (l.label === "Paid" ? "" : "bg-ink text-paper")}>{l.label}</span></p>
             <p className="text-sm">{l.area} · {l.city} · {l.languages.join(", ")} · {l.formats.join(", ")}</p>
           </div>
         ))}

@@ -1,201 +1,85 @@
 import { useEffect, useState, useCallback } from "react";
-import { loadEvents, onChange, appendEvent, createComplaint, verifyComplaint, tamper, resetDemo, seedIfEmpty, runEscalations, addDays, nowMs, getOffset } from "./lib/store";
+import { loadEvents, onChange, createComplaint, seedIfEmpty, runEscalations, nowMs, getOffset } from "./lib/store";
 import { fmtDate } from "./lib/escalation";
-import { ROLES, ROLE_NOTE, listComplaints, complaintView, redactDraft } from "./lib/views";
-import { LABEL } from "./lib/labels";
-import { FIELD_KEYS, FIELD_LABEL } from "./lib/aiDraft";
+import { ROLES, ROLE_NOTE, listComplaints, complaintView } from "./lib/views";
+import { Home, ComplaintList, ComplaintPage, PublicPage, AdminPage, Restricted } from "./Pages.jsx";
 import ReportForm from "./ReportForm.jsx";
 import Legal from "./Legal.jsx";
 
-const btn = "min-h-12 px-4 rounded-lg font-semibold border border-slate-400 bg-white active:bg-slate-100 disabled:opacity-50";
-const btnMain = "min-h-12 px-4 rounded-lg font-semibold bg-blue-800 text-white active:bg-blue-900 disabled:opacity-50";
-const input = "w-full min-h-12 border border-slate-400 rounded-lg px-3 bg-white";
-const OFFICIAL = "Office official (sample)";
-const CITIZEN = "Citizen (Sunita, sample)";
-const REVIEWER = "Reviewer (sample)";
+const ROLE_HOME = { Citizen: "/", "Office official": "/office", Reviewer: "/review", Public: "/public", Admin: "/admin" };
+const NAV = {
+  Citizen: [["/", "Home"], ["/report", "Report a problem"], ["/complaints", "My complaints"], ["/legal", "Legal help"], ["/public", "Public record"]],
+  "Office official": [["/office", "Inbox"]],
+  Reviewer: [["/review", "Review queue"], ["/public", "Public record"]],
+  Public: [["/public", "Public record"]],
+  Admin: [["/admin", "Demo tools"], ["/public", "Public record"]],
+};
 
-function Head({ role, head }) {
-  return (
-    <div className="rounded-lg border border-slate-300 bg-white p-3 space-y-1 text-sm">
-      <p className="font-semibold">{head.category} · {head.department} · {head.office}</p>
-      <p className="font-semibold">This is an allegation, not a finding.</p>
-      {(role === "Citizen" || role === "Reviewer") && <p>Description: {head.description}</p>}
-      {(role === "Citizen" || role === "Reviewer") && head.report && FIELD_KEYS.map((k) => <p key={k}><span className="font-semibold">{FIELD_LABEL[k]}:</span> {head.report[k].value}{head.aiDraft && head.aiDraft[k] && head.aiDraft[k].value !== head.report[k].value && <span className="text-xs"> (corrected by the complainant; the AI wrote: {head.aiDraft[k].value})</span>}</p>)}
-      {role === "Reviewer" && head.aiMode && <p className="text-xs">Report source: {head.aiMode === "ai" ? "AI draft, corrected by the complainant" : head.aiMode === "demo" ? "demo result (rule-based), corrected by the complainant" : "sample data"}</p>}
-      {role === "Reviewer" && head.flags && head.flags.length > 0 && (
-        <div className="rounded border border-amber-500 bg-amber-50 p-2 mt-1">
-          <p className="font-semibold">Worth a closer look</p>
-          <ul className="list-disc ml-5">{head.flags.map((f, i) => <li key={i}><span className="font-semibold">{f.kind}:</span> {f.reason}</li>)}</ul>
-          <p className="text-xs">These flags are prompts for you to check. They are not proof of anything.</p>
-        </div>
-      )}
-      {(role === "Citizen" || role === "Reviewer") && <p>Complainant: {head.complainant ? `${head.complainant.name}, ${head.complainant.phone}` : "not recorded"}</p>}
-      {role === "Reviewer" && <p>Witness (reviewer only): {head.witness || "none"}</p>}
-      {(role === "Reviewer" || role === "Office official") && <p>Summary the office sees: {head.summary || "not approved yet. The office sees no details until the reviewer approves a summary."}</p>}
-      {(role === "Public" || role === "Admin") && <p>Details and evidence are never public.</p>}
-    </div>
-  );
-}
-
-function ReviewerBox({ head, onApprove, busy }) {
-  const [text, setText] = useState(head.summary || redactDraft(head.description, [head.complainant && head.complainant.name, head.complainant && head.complainant.phone, head.witness]));
-  return (
-    <section className="space-y-2">
-      <h2 className="text-xl font-bold">Approve what the office sees</h2>
-      <label htmlFor="sum" className="text-sm block">Names, phone number and witness are already replaced. Check it, edit it, then approve.</label>
-      <textarea id="sum" rows={4} className="w-full border border-slate-400 rounded-lg p-3" value={text} onChange={(e) => setText(e.target.value)} />
-      <button disabled={busy || !text.trim()} className={btnMain + " w-full"} onClick={() => onApprove(text.trim())}>{head.approved ? "Approve updated summary" : "Approve summary"}</button>
-    </section>
-  );
+function useRoute() {
+  const [h, setH] = useState(window.location.hash);
+  useEffect(() => { const f = () => { setH(window.location.hash); window.scrollTo(0, 0); }; window.addEventListener("hashchange", f); return () => window.removeEventListener("hashchange", f); }, []);
+  return h.replace(/^#/, "") || "/";
 }
 
 export default function App() {
   const [role, setRoleState] = useState(sessionStorage.getItem("jd_role") || "Citizen");
   const [events, setEvents] = useState(loadEvents());
-  const [sel, setSel] = useState("");
-  const [result, setResult] = useState(null);
-  const [note, setNote] = useState("");
-  const [resp, setResp] = useState("");
-  const [expected, setExpected] = useState("");
-  const [page, setPage] = useState("complaints");
-  const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
+  const route = useRoute();
+  const [, page = "", arg = ""] = route.split("/");
 
   const refresh = useCallback(async () => { await runEscalations(); setEvents(loadEvents()); }, []);
   useEffect(() => { seedIfEmpty().then(refresh); return onChange(refresh); }, [refresh]);
+  const run = async (fn) => { setBusy(true); try { return await fn(); } finally { setBusy(false); await refresh(); } };
+  const setRole = (r) => { sessionStorage.setItem("jd_role", r); setRoleState(r); window.location.hash = ROLE_HOME[r]; };
 
   const now = nowMs();
-  const rows = listComplaints(role, events, now).filter((r) => r.id.toLowerCase().includes(q.toLowerCase()));
-  const current = rows.some((r) => r.id === sel) ? sel : rows[0] ? rows[0].id : "";
-  const view = current ? complaintView(role, events, current, now) : null;
-  const st = view ? view.state : null;
   const off = getOffset();
+  let rows = listComplaints(role, events, now);
+  if (role === "Reviewer") rows = rows.map((r) => { const h = complaintView("Reviewer", events, r.id, now).head; return { ...r, flags: h.flags.length, approved: h.approved }; });
 
-  const run = async (fn) => { setBusy(true); try { await fn(); } finally { setBusy(false); await refresh(); } };
-  const pick = (id) => { setSel(id); setResult(null); };
-  const setRole = (r) => { sessionStorage.setItem("jd_role", r); setRoleState(r); setResult(null); };
+  let content;
+  if (page === "") content = role === "Citizen" ? <Home /> : <Home />;
+  else if (page === "report") content = role === "Citizen" ? <ReportForm busy={busy} onSubmit={(meta) => run(() => createComplaint(meta))} /> : <Restricted who="citizens" />;
+  else if (page === "complaints") content = role === "Citizen" ? <ComplaintList rows={rows} title="My complaints" intro="Every complaint you have filed, and where it is now." empty="You have not filed a complaint yet." /> : <Restricted who="citizens" />;
+  else if (page === "legal") content = role === "Citizen" ? <Legal view={arg ? complaintView("Citizen", events, arg, now) : null} /> : <Restricted who="citizens" />;
+  else if (page === "complaint") content = <ComplaintPage key={role + arg} role={role} events={events} id={arg} now={now} run={run} busy={busy} />;
+  else if (page === "public") content = <PublicPage rows={listComplaints("Public", events, now)} />;
+  else if (page === "office") content = role === "Office official" ? <ComplaintList rows={rows} title="Office inbox" intro="Complaints for your office, with names and details removed." /> : <Restricted who="office officials" />;
+  else if (page === "review") content = role === "Reviewer" ? <ComplaintList rows={rows} title="Review queue" intro="You see everything here, including identity and evidence. You decide what the office is allowed to see." /> : <Restricted who="reviewers" />;
+  else if (page === "admin") content = role === "Admin" ? <AdminPage rows={rows} run={run} busy={busy} /> : <Restricted who="the admin" />;
+  else content = <Home />;
 
   return (
-    <div className="max-w-xl mx-auto p-4 space-y-5">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-bold">Jawabdehi</h1>
-        <p className="text-slate-700">A complaint record that nobody can quietly rewrite. Everything here is made-up sample data.</p>
-        <p className="rounded bg-amber-100 border border-amber-400 p-2 text-sm font-semibold">If you are in danger right now, call 112.</p>
-        <label htmlFor="role" className="font-semibold block">Viewing as (demo only)</label>
-        <select id="role" className={input} value={role} onChange={(e) => setRole(e.target.value)}>{ROLES.map((r) => <option key={r}>{r}</option>)}</select>
-        <p className="text-sm rounded bg-slate-100 border border-slate-300 p-2">{ROLE_NOTE[role]}</p>
-        <p className="text-sm font-semibold">Demo date: {fmtDate(now)}{off ? ` (+${off} days)` : " (today)"}</p>
+    <div className="min-h-screen flex flex-col">
+      <div className="no-print bg-ink text-paper text-sm">
+        <div className="max-w-6xl mx-auto px-4 py-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span className="font-medium tracking-wider text-xs">DEMO</span>
+          <label htmlFor="role" className="flex items-center gap-2">Viewing as
+            <select id="role" className="bg-paper text-ink rounded px-2 min-h-8" value={role} onChange={(e) => setRole(e.target.value)}>{ROLES.map((r) => <option key={r}>{r}</option>)}</select>
+          </label>
+          <span>Demo date: {fmtDate(now)}{off ? ` (+${off} days)` : ""}</span>
+          <span className="opacity-80 hidden md:inline">{ROLE_NOTE[role]}</span>
+        </div>
+      </div>
+
+      <header className="no-print border-b border-rule">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-wrap items-baseline justify-between gap-3">
+          <a href={"#" + ROLE_HOME[role]} className="no-underline text-ink"><span className="font-serif text-2xl font-semibold">Jawabdehi</span> <span className="text-muted">जवाबदेही</span></a>
+          <nav aria-label="Main" className="flex flex-wrap gap-x-5 gap-y-1">
+            {NAV[role].map(([to, label]) => { const on = to === "/" ? page === "" : page === to.slice(1); return <a key={to} href={"#" + to} aria-current={on ? "page" : undefined} className={"no-underline py-1 border-b-2 " + (on ? "border-ink font-medium" : "border-transparent text-muted hover:text-ink")}>{label}</a>; })}
+          </nav>
+        </div>
       </header>
 
-      {role === "Citizen" && (
-        <nav className="grid grid-cols-2 gap-2" aria-label="Sections">
-          <button className={btn + (page === "complaints" ? " border-blue-800 border-2" : "")} onClick={() => setPage("complaints")}>My complaints</button>
-          <button className={btn + (page === "legal" ? " border-blue-800 border-2" : "")} onClick={() => setPage("legal")}>Legal help</button>
-        </nav>
-      )}
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8">{content}</main>
 
-      {role === "Citizen" && page === "complaints" && <ReportForm busy={busy} onSubmit={(meta) => run(async () => { const id = await createComplaint(meta); pick(id); })} />}
-      {role === "Citizen" && page === "legal" && <Legal view={view} />}
-
-      {!(role === "Citizen" && page === "legal") && <>
-      <section className="space-y-2">
-        <h2 className="text-xl font-bold">{role === "Public" ? "Public record" : role === "Office official" ? "Office inbox" : "Complaints"}</h2>
-        {role === "Public" && (<><label htmlFor="q" className="font-semibold block">Search by complaint ID</label><input id="q" className={input} placeholder="JD-2026-" value={q} onChange={(e) => setQ(e.target.value)} /></>)}
-        <label htmlFor="cid" className="font-semibold block">Choose a complaint</label>
-        <select id="cid" className={input} value={current} onChange={(e) => pick(e.target.value)}>{rows.map((r) => <option key={r.id} value={r.id}>{r.id} · {r.category} · {r.status}</option>)}</select>
-        {!rows.length && <p className="text-sm">No complaints found.</p>}
-      </section>
-
-      {view && <Head role={role} head={view.head} />}
-
-      {st && (
-        <section className="rounded-lg border-2 border-blue-800 bg-blue-50 p-3 space-y-1">
-          <h2 className="text-lg font-bold">Where this complaint is now</h2>
-          <p>With: <span className="font-semibold">{st.office}</span> (level {st.level + 1} of {st.chain.length})</p>
-          <p>Status: <span className="font-semibold">{st.status}</span></p>
-          {!st.responded && !st.reachedTop && !st.inv && !st.acked && <p className="text-sm">Must acknowledge by {fmtDate(st.ackDue)}</p>}
-          {!st.responded && !st.reachedTop && !st.inv && <p className="text-sm">Must respond by {fmtDate(st.respondDue)}</p>}
-          {st.paused && <p className="text-sm">Escalation is paused while updates keep coming. Next update due by {fmtDate(st.updateDue)}.</p>}
-          {st.reachedTop && <div className="text-sm"><p className="font-semibold">No higher authority in this system.</p>{role === "Citizen" && <button className={btnMain + " w-full mt-2"} onClick={() => setPage("legal")}>See next steps outside this system</button>}</div>}
-        </section>
-      )}
-
-      {view && (
-        <section className="space-y-3">
-          <h2 className="text-xl font-bold">Timeline</h2>
-          <ol className="space-y-2">
-            {view.timeline.map((e) => {
-              const bad = result && !result.ok && result.badSeq === e.seq;
-              return (
-                <li key={e.id} className={"rounded-lg border p-3 " + (bad ? "border-red-700 bg-red-50" : "border-slate-300 bg-white")}>
-                  <div className="font-semibold">{e.seq}. {LABEL[e.type] || e.type}</div>
-                  <div className="text-sm text-slate-700">{e.actor} · {new Date(e.at).toLocaleString("en-IN")}</div>
-                  {e.data.note && <div className="text-sm mt-1">{e.data.note}</div>}
-                  {e.data.expectedDate && <div className="text-sm mt-1">Expected by: {e.data.expectedDate}</div>}
-                  {e.data.notice && <div className="text-sm mt-1 font-semibold">Message to complainant: {e.data.notice}</div>}
-                  {e.data.fileName && <div className="text-sm mt-1">File: {e.data.fileName} ({e.data.size} bytes)<br /><span className="font-mono break-all">SHA-256: {e.data.sha256.slice(0, 24)}…</span></div>}
-                  <div className="text-xs font-mono text-slate-500 mt-1 break-all">hash {e.hash.slice(0, 16)}… (links to {e.prevHash.slice(0, 8)}…)</div>
-                  {bad && <div className="mt-1 font-bold text-red-800">DOES NOT MATCH: {result.reason}</div>}
-                </li>
-              );
-            })}
-          </ol>
-          <button disabled={busy} className={btnMain + " w-full"} onClick={() => run(async () => setResult(await verifyComplaint(current)))}>Verify this record</button>
-          {result && (
-            <p role="status" className={"rounded-lg p-3 font-semibold " + (result.ok ? "bg-green-100 border border-green-700 text-green-900" : "bg-red-100 border border-red-700 text-red-900")}>
-              {result.ok ? `Record is intact: all ${result.count} entries and evidence fingerprints match.` : `Record check FAILED at entry ${result.badSeq}. ${result.reason}`}
-            </p>
-          )}
-        </section>
-      )}
-
-      {view && role === "Reviewer" && <ReviewerBox key={current + view.head.approved} head={view.head} busy={busy} onApprove={(summary) => run(() => appendEvent(current, "redaction_approved", REVIEWER, { summary }))} />}
-
-      {view && st && role === "Citizen" && (
-        <section className="space-y-2">
-          <h2 className="text-xl font-bold">Add evidence</h2>
-          <label htmlFor="file" className="font-semibold block">Photo, audio or document</label>
-          <input id="file" type="file" className="w-full min-h-12" onChange={(e) => { const f = e.target.files[0]; if (f) run(() => appendEvent(current, "evidence_added", CITIZEN, { note: "Evidence file added." }, f)); e.target.value = ""; }} />
-        </section>
-      )}
-
-      {view && st && role === "Office official" && (
-        <section className="space-y-3">
-          <h2 className="text-xl font-bold">Office actions</h2>
-          <p className="text-sm text-slate-700">There is no edit or delete button anywhere. Every action adds a new entry at the end.</p>
-          <button disabled={busy || st.acked} className={btn + " w-full"} onClick={() => run(() => appendEvent(current, "acknowledged", OFFICIAL, { note: `Acknowledged by ${st.office}.` }))}>Acknowledge</button>
-          <div className="flex gap-2">
-            <label htmlFor="exp" className="sr-only">Expected date</label>
-            <input id="exp" type="date" className={input} value={expected} onChange={(e) => setExpected(e.target.value)} />
-            <button disabled={busy || !expected || st.inv} className={btn} onClick={() => run(() => appendEvent(current, "investigation_started", OFFICIAL, { expectedDate: expected, note: "Investigation in progress. Updates will follow at least every 15 days." }))}>Start investigation</button>
-          </div>
-          <div className="flex gap-2">
-            <label htmlFor="note" className="sr-only">Update text</label>
-            <input id="note" className={input} placeholder="Progress update" value={note} onChange={(e) => setNote(e.target.value)} />
-            <button disabled={busy || !note.trim()} className={btn} onClick={() => run(async () => { await appendEvent(current, "update", OFFICIAL, { note: note.trim() }); setNote(""); })}>Post</button>
-          </div>
-          <div className="flex gap-2">
-            <label htmlFor="resp" className="sr-only">Response text</label>
-            <input id="resp" className={input} placeholder="Official response" value={resp} onChange={(e) => setResp(e.target.value)} />
-            <button disabled={busy || !resp.trim()} className={btn} onClick={() => run(async () => { await appendEvent(current, "response", OFFICIAL, { note: resp.trim() }); setResp(""); })}>Respond</button>
-          </div>
-        </section>
-      )}
-
-      </>}
-
-      {role === "Admin" && (
-        <section className="space-y-3 border-t border-slate-300 pt-4">
-          <h2 className="text-xl font-bold">Admin (demo only)</h2>
-          <p className="text-sm text-slate-700">Move the demo date forward to watch deadlines pass and complaints escalate.</p>
-          <div className="grid grid-cols-4 gap-2">{[1, 7, 15, 30].map((n) => <button key={n} disabled={busy} className={btn} onClick={() => run(async () => addDays(n))}>+{n}d</button>)}</div>
-          <p className="text-sm text-slate-700">Tamper test edits one stored entry behind the app's back. Then press "Verify this record".</p>
-          <div className="flex gap-2 flex-wrap">
-            <button disabled={!current} className={btn} onClick={() => { tamper(current); setResult(null); refresh(); }}>Tamper test</button>
-            <button className={btn} onClick={() => run(async () => { await resetDemo(); setResult(null); setSel(""); })}>Reset demo</button>
-          </div>
-        </section>
-      )}
+      <footer className="no-print border-t border-rule">
+        <div className="max-w-6xl mx-auto px-4 py-4 text-sm text-muted flex flex-wrap justify-between gap-2">
+          <span className="font-medium text-ink">If you are in danger right now, call 112.</span>
+          <span>Everything here is made-up sample data. Prototype for HACKCACHE'26.</span>
+        </div>
+      </footer>
     </div>
   );
 }

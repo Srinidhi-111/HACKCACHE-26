@@ -1,14 +1,11 @@
 import { useState, useRef } from "react";
 import { DEPARTMENTS } from "./data/authorities";
+import { DEADLINES } from "./data/config";
 import { CATEGORIES } from "./lib/labels";
 import { FIELD_KEYS, FIELD_LABEL, NOT_STATED, requestDraft } from "./lib/aiDraft";
 
-const btn = "min-h-12 px-4 rounded-lg font-semibold border border-slate-400 bg-white active:bg-slate-100 disabled:opacity-50";
-const btnMain = "min-h-12 px-4 rounded-lg font-semibold bg-blue-800 text-white active:bg-blue-900 disabled:opacity-50";
-const input = "w-full min-h-12 border border-slate-400 rounded-lg px-3 bg-white";
-
 export default function ReportForm({ onSubmit, busy }) {
-  const [step, setStep] = useState("write");
+  const [step, setStep] = useState(1);
   const [dept, setDept] = useState(DEPARTMENTS[0]);
   const [cat, setCat] = useState(CATEGORIES[0]);
   const [text, setText] = useState("");
@@ -21,6 +18,7 @@ export default function ReportForm({ onSubmit, busy }) {
   const [draft, setDraft] = useState(null);
   const [mode, setMode] = useState("demo");
   const [fields, setFields] = useState({});
+  const [receipt, setReceipt] = useState(null);
   const rec = useRef(null);
   const SR = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
 
@@ -38,66 +36,105 @@ export default function ReportForm({ onSubmit, busy }) {
     rec.current = r; r.start(); setListening(true);
   }
 
-  async function prepare() {
+  async function toReview() {
     setLoading(true);
     const r = await requestDraft(text.trim());
     setDraft(r.draft); setMode(r.mode);
     setFields(Object.fromEntries(FIELD_KEYS.map((k) => [k, r.draft[k].value])));
-    setLoading(false); setStep("review");
+    setLoading(false); setStep(4);
   }
 
   async function submit() {
     const report = Object.fromEntries(FIELD_KEYS.map((k) => [k, { value: (fields[k] || "").trim() || NOT_STATED, source: draft[k].source }]));
-    await onSubmit({ category: cat, department: dept, office: "Sample office", description: text.trim(), complainant: { name: name.trim(), phone: phone.trim() }, witness: witness.trim() || null, aiMode: mode, aiDraft: draft, report });
-    setStep("write"); setText(""); setWitness(""); setDraft(null);
+    const id = await onSubmit({ category: cat, department: dept, office: "Sample office", description: text.trim(), complainant: { name: name.trim(), phone: phone.trim() }, witness: witness.trim() || null, aiMode: mode, aiDraft: draft, report });
+    setReceipt({ id, dept, cat });
   }
 
-  if (step === "review") {
+  if (receipt) {
     return (
-      <section className="space-y-3">
-        <h2 className="text-xl font-bold">Check your report</h2>
-        <p className="text-sm rounded bg-slate-100 border border-slate-300 p-2">
-          {mode === "ai" ? "Drafted by AI from your words. The AI can be wrong, so check every line." : "Demo result: no AI key is set, so simple rules made this draft from your words. Check every line."} You can correct anything. Your corrections are kept next to the draft.
-        </p>
-        {FIELD_KEYS.map((k) => (
-          <div key={k}>
-            <label htmlFor={"f-" + k} className="font-semibold block">{FIELD_LABEL[k]}</label>
-            <textarea id={"f-" + k} rows={2} className="w-full border border-slate-400 rounded-lg p-3" value={fields[k]} onChange={(e) => setFields({ ...fields, [k]: e.target.value })} />
-            <p className="text-xs text-slate-600">{draft[k].source ? `From your words: "${draft[k].source}"` : "Not stated in your account."}</p>
-          </div>
-        ))}
-        <div className="flex gap-2">
-          <button className={btn} onClick={() => setStep("write")}>Back</button>
-          <button disabled={busy} className={btnMain + " flex-1"} onClick={submit}>Submit complaint</button>
+      <div className="max-w-xl space-y-5">
+        <h1 className="text-3xl">Your complaint is recorded</h1>
+        <div className="border-2 border-dashed border-ink bg-panel p-5 space-y-3">
+          <p className="lbl">Acknowledgement slip</p>
+          <p className="mono text-2xl" style={{ fontSize: "1.6rem" }}>{receipt.id}</p>
+          <p>{receipt.cat} · sent to the {receipt.dept} chain.</p>
+          <p className="text-muted">The first office must acknowledge within {DEADLINES.acknowledgeDays} days and respond within {DEADLINES.respondDays} days. If it does not, your complaint moves to the next authority and you are told. That never means anyone has been found guilty, only that the deadline passed.</p>
+          <p className="font-medium">Keep this number to track your complaint.</p>
         </div>
-      </section>
+        <div className="flex flex-wrap gap-3 no-print">
+          <a className="btn-main" href={`#/complaint/${receipt.id}`}>Track my complaint</a>
+          <button className="btn" onClick={() => window.print()}>Print this slip</button>
+          <button className="btn" onClick={() => { setReceipt(null); setStep(1); setText(""); setWitness(""); setDraft(null); }}>Report another problem</button>
+        </div>
+      </div>
     );
   }
 
   return (
-    <section className="space-y-3">
-      <h2 className="text-xl font-bold">Report a new problem</h2>
-      <label htmlFor="dept" className="font-semibold block">Which department?</label>
-      <select id="dept" className={input} value={dept} onChange={(e) => setDept(e.target.value)}>{DEPARTMENTS.map((d) => <option key={d}>{d}</option>)}</select>
-      <label htmlFor="cat" className="font-semibold block">What happened?</label>
-      <select id="cat" className={input} value={cat} onChange={(e) => setCat(e.target.value)}>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select>
-      <label htmlFor="desc" className="font-semibold block">Tell us in your own words</label>
-      <textarea id="desc" rows={4} className="w-full border border-slate-400 rounded-lg p-3" value={text} onChange={(e) => setText(e.target.value)} />
-      {SR ? (
-        <div className="flex gap-2">
-          <label htmlFor="lang" className="sr-only">Speaking language</label>
-          <select id="lang" className={input} value={lang} onChange={(e) => setLang(e.target.value)}><option value="hi-IN">हिंदी</option><option value="en-IN">English</option></select>
-          <button className={btn} onClick={toggleMic}>{listening ? "Stop" : "Speak"}</button>
-        </div>
-      ) : <p className="text-xs text-slate-600">Speaking is not supported in this browser. Try Chrome, or type instead.</p>}
-      <label htmlFor="nm" className="font-semibold block">Your name (made-up)</label>
-      <input id="nm" className={input} value={name} onChange={(e) => setName(e.target.value)} />
-      <label htmlFor="ph" className="font-semibold block">Your phone (made-up)</label>
-      <input id="ph" className={input} value={phone} onChange={(e) => setPhone(e.target.value)} />
-      <label htmlFor="wt" className="font-semibold block">Witness name, optional (only the reviewer will see it)</label>
-      <input id="wt" className={input} value={witness} onChange={(e) => setWitness(e.target.value)} />
-      <p className="text-xs text-slate-600">To draft your report, your words (not your name or phone) are sent to an AI service. Don't type real names or numbers in this demo.</p>
-      <button disabled={loading || !text.trim() || !name.trim()} className={btnMain + " w-full"} onClick={prepare}>{loading ? "Preparing draft…" : "Prepare my report"}</button>
-    </section>
+    <div className="max-w-2xl space-y-6">
+      <div>
+        <div className="flex gap-1" aria-hidden="true">{[1, 2, 3, 4].map((i) => <span key={i} className={"h-1.5 flex-1 rounded-sm " + (i <= step ? "bg-ink" : "bg-rule")} />)}</div>
+        <p className="lbl mt-2">Step {step} of 4</p>
+      </div>
+
+      {step === 1 && (
+        <section className="space-y-5">
+          <h1 className="text-3xl">What happened?</h1>
+          <div><label htmlFor="dept" className="font-medium block mb-1">Which department?</label>
+            <select id="dept" className="field" value={dept} onChange={(e) => setDept(e.target.value)}>{DEPARTMENTS.map((d) => <option key={d}>{d}</option>)}</select></div>
+          <fieldset className="space-y-2"><legend className="font-medium mb-1">What kind of problem?</legend>
+            {CATEGORIES.map((c) => (
+              <label key={c} className={"flex items-center gap-3 min-h-12 rounded border px-3 cursor-pointer " + (cat === c ? "border-ink bg-tint" : "border-ink/30 bg-panel")}>
+                <input type="radio" name="cat" checked={cat === c} onChange={() => setCat(c)} /> {c}
+              </label>
+            ))}
+          </fieldset>
+          <button className="btn-main" onClick={() => setStep(2)}>Continue</button>
+        </section>
+      )}
+
+      {step === 2 && (
+        <section className="space-y-4">
+          <h1 className="text-3xl">Tell us in your own words</h1>
+          <label htmlFor="desc" className="sr-only">Your account</label>
+          <textarea id="desc" rows={6} className="field" value={text} onChange={(e) => setText(e.target.value)} />
+          {SR ? (
+            <div className="flex gap-2 max-w-sm">
+              <label htmlFor="lang" className="sr-only">Speaking language</label>
+              <select id="lang" className="field" value={lang} onChange={(e) => setLang(e.target.value)}><option value="hi-IN">हिंदी</option><option value="en-IN">English</option></select>
+              <button className="btn" onClick={toggleMic}>{listening ? "Stop" : "Speak"}</button>
+            </div>
+          ) : <p className="text-sm text-muted">Speaking is not supported in this browser. Try Chrome, or type instead.</p>}
+          <p className="text-sm text-muted">To draft your report, your words (not your name or phone) are sent to an AI service. Do not type real names or numbers in this demo.</p>
+          <div className="flex gap-3"><button className="btn" onClick={() => setStep(1)}>Back</button><button className="btn-main" disabled={!text.trim()} onClick={() => setStep(3)}>Continue</button></div>
+        </section>
+      )}
+
+      {step === 3 && (
+        <section className="space-y-4">
+          <h1 className="text-3xl">About you</h1>
+          <p className="text-muted">Only the reviewer sees these. The office and the public never do.</p>
+          <div><label htmlFor="nm" className="font-medium block mb-1">Your name (made-up)</label><input id="nm" className="field" value={name} onChange={(e) => setName(e.target.value)} /></div>
+          <div><label htmlFor="ph" className="font-medium block mb-1">Your phone (made-up)</label><input id="ph" className="field" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
+          <div><label htmlFor="wt" className="font-medium block mb-1">Witness name, optional</label><input id="wt" className="field" value={witness} onChange={(e) => setWitness(e.target.value)} /></div>
+          <div className="flex gap-3"><button className="btn" onClick={() => setStep(2)}>Back</button><button className="btn-main" disabled={loading || !name.trim()} onClick={toReview}>{loading ? "Preparing your report…" : "Prepare my report"}</button></div>
+        </section>
+      )}
+
+      {step === 4 && (
+        <section className="space-y-5">
+          <h1 className="text-3xl">Check your report</h1>
+          <p className="card text-sm">{mode === "ai" ? "Drafted by AI from your words. The AI can be wrong, so check every line." : "Demo result: no AI key is set, so simple rules made this draft from your words. Check every line."} You can correct anything. Your corrections are kept next to the draft.</p>
+          {FIELD_KEYS.map((k) => (
+            <div key={k}>
+              <label htmlFor={"f-" + k} className="font-medium block mb-1">{FIELD_LABEL[k]}</label>
+              <textarea id={"f-" + k} rows={2} className="field" value={fields[k]} onChange={(e) => setFields({ ...fields, [k]: e.target.value })} />
+              <p className="text-sm text-muted mt-1">{draft[k].source ? `From your words: "${draft[k].source}"` : "Not stated in your account."}</p>
+            </div>
+          ))}
+          <div className="flex gap-3"><button className="btn" onClick={() => setStep(3)}>Back</button><button disabled={busy} className="btn-main" onClick={submit}>Submit complaint</button></div>
+        </section>
+      )}
+    </div>
   );
 }
