@@ -2,7 +2,7 @@
 
 Jawabdehi is Hindi for accountability. This is a working prototype for HACKCACHE'26, Problem Statement 6: *Building a Citizen-Powered Government Accountability Platform* (Social Impact).
 
-- Live app: [add your Vercel link]
+- Live app: https://jawabdehi-eosin.vercel.app/
 - Demo video: [add your video link]
 - Team: [team name and members who contributed]
 
