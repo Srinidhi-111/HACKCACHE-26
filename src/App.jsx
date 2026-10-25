@@ -1,15 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
 import { loadEvents, onChange, appendEvent, createComplaint, verifyComplaint, tamper, resetDemo, seedIfEmpty, runEscalations, addDays, nowMs, getOffset } from "./lib/store";
 import { fmtDate } from "./lib/escalation";
-import { DEPARTMENTS } from "./data/authorities";
 import { ROLES, ROLE_NOTE, listComplaints, complaintView, redactDraft } from "./lib/views";
+import { LABEL } from "./lib/labels";
+import { FIELD_KEYS, FIELD_LABEL } from "./lib/aiDraft";
+import ReportForm from "./ReportForm.jsx";
+import Legal from "./Legal.jsx";
 
-const LABEL = {
-  submitted: "Complaint submitted", parallel_referral: "Also sent to Anti-Corruption Bureau", redaction_approved: "Summary approved by reviewer",
-  acknowledged: "Acknowledged by office", investigation_started: "Investigation in progress", update: "Update from office",
-  response: "Response from office", evidence_added: "Evidence added", escalated: "Moved to next authority", reached_top: "Reached the top of the chain",
-};
-const CATEGORIES = ["Bribe demand", "Refused service", "Rude or abusive behaviour", "Not doing their duty", "Other"];
 const btn = "min-h-12 px-4 rounded-lg font-semibold border border-slate-400 bg-white active:bg-slate-100 disabled:opacity-50";
 const btnMain = "min-h-12 px-4 rounded-lg font-semibold bg-blue-800 text-white active:bg-blue-900 disabled:opacity-50";
 const input = "w-full min-h-12 border border-slate-400 rounded-lg px-3 bg-white";
@@ -23,6 +20,15 @@ function Head({ role, head }) {
       <p className="font-semibold">{head.category} · {head.department} · {head.office}</p>
       <p className="font-semibold">This is an allegation, not a finding.</p>
       {(role === "Citizen" || role === "Reviewer") && <p>Description: {head.description}</p>}
+      {(role === "Citizen" || role === "Reviewer") && head.report && FIELD_KEYS.map((k) => <p key={k}><span className="font-semibold">{FIELD_LABEL[k]}:</span> {head.report[k].value}{head.aiDraft && head.aiDraft[k] && head.aiDraft[k].value !== head.report[k].value && <span className="text-xs"> (corrected by the complainant; the AI wrote: {head.aiDraft[k].value})</span>}</p>)}
+      {role === "Reviewer" && head.aiMode && <p className="text-xs">Report source: {head.aiMode === "ai" ? "AI draft, corrected by the complainant" : head.aiMode === "demo" ? "demo result (rule-based), corrected by the complainant" : "sample data"}</p>}
+      {role === "Reviewer" && head.flags && head.flags.length > 0 && (
+        <div className="rounded border border-amber-500 bg-amber-50 p-2 mt-1">
+          <p className="font-semibold">Worth a closer look</p>
+          <ul className="list-disc ml-5">{head.flags.map((f, i) => <li key={i}><span className="font-semibold">{f.kind}:</span> {f.reason}</li>)}</ul>
+          <p className="text-xs">These flags are prompts for you to check. They are not proof of anything.</p>
+        </div>
+      )}
       {(role === "Citizen" || role === "Reviewer") && <p>Complainant: {head.complainant ? `${head.complainant.name}, ${head.complainant.phone}` : "not recorded"}</p>}
       {role === "Reviewer" && <p>Witness (reviewer only): {head.witness || "none"}</p>}
       {(role === "Reviewer" || role === "Office official") && <p>Summary the office sees: {head.summary || "not approved yet. The office sees no details until the reviewer approves a summary."}</p>}
@@ -51,12 +57,7 @@ export default function App() {
   const [note, setNote] = useState("");
   const [resp, setResp] = useState("");
   const [expected, setExpected] = useState("");
-  const [cat, setCat] = useState(CATEGORIES[0]);
-  const [dept, setDept] = useState(DEPARTMENTS[0]);
-  const [desc, setDesc] = useState("");
-  const [name, setName] = useState("Sunita Devi (sample)");
-  const [phone, setPhone] = useState("98XXXXXX01");
-  const [witness, setWitness] = useState("");
+  const [page, setPage] = useState("complaints");
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -87,24 +88,16 @@ export default function App() {
       </header>
 
       {role === "Citizen" && (
-        <section className="space-y-3">
-          <h2 className="text-xl font-bold">Report a new problem</h2>
-          <label htmlFor="dept" className="font-semibold block">Which department?</label>
-          <select id="dept" className={input} value={dept} onChange={(e) => setDept(e.target.value)}>{DEPARTMENTS.map((d) => <option key={d}>{d}</option>)}</select>
-          <label htmlFor="cat" className="font-semibold block">What happened?</label>
-          <select id="cat" className={input} value={cat} onChange={(e) => setCat(e.target.value)}>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select>
-          <label htmlFor="desc" className="font-semibold block">Tell us in your own words</label>
-          <textarea id="desc" rows={3} className="w-full border border-slate-400 rounded-lg p-3" value={desc} onChange={(e) => setDesc(e.target.value)} />
-          <label htmlFor="nm" className="font-semibold block">Your name (made-up)</label>
-          <input id="nm" className={input} value={name} onChange={(e) => setName(e.target.value)} />
-          <label htmlFor="ph" className="font-semibold block">Your phone (made-up)</label>
-          <input id="ph" className={input} value={phone} onChange={(e) => setPhone(e.target.value)} />
-          <label htmlFor="wt" className="font-semibold block">Witness name, optional (only the reviewer will see it)</label>
-          <input id="wt" className={input} value={witness} onChange={(e) => setWitness(e.target.value)} />
-          <button disabled={busy || !desc.trim() || !name.trim()} className={btnMain + " w-full"} onClick={() => run(async () => { const id = await createComplaint({ category: cat, department: dept, office: "Sample office", description: desc.trim(), complainant: { name: name.trim(), phone: phone.trim() }, witness: witness.trim() || null }); setDesc(""); setWitness(""); pick(id); })}>Submit complaint</button>
-        </section>
+        <nav className="grid grid-cols-2 gap-2" aria-label="Sections">
+          <button className={btn + (page === "complaints" ? " border-blue-800 border-2" : "")} onClick={() => setPage("complaints")}>My complaints</button>
+          <button className={btn + (page === "legal" ? " border-blue-800 border-2" : "")} onClick={() => setPage("legal")}>Legal help</button>
+        </nav>
       )}
 
+      {role === "Citizen" && page === "complaints" && <ReportForm busy={busy} onSubmit={(meta) => run(async () => { const id = await createComplaint(meta); pick(id); })} />}
+      {role === "Citizen" && page === "legal" && <Legal view={view} />}
+
+      {!(role === "Citizen" && page === "legal") && <>
       <section className="space-y-2">
         <h2 className="text-xl font-bold">{role === "Public" ? "Public record" : role === "Office official" ? "Office inbox" : "Complaints"}</h2>
         {role === "Public" && (<><label htmlFor="q" className="font-semibold block">Search by complaint ID</label><input id="q" className={input} placeholder="JD-2026-" value={q} onChange={(e) => setQ(e.target.value)} /></>)}
@@ -123,7 +116,7 @@ export default function App() {
           {!st.responded && !st.reachedTop && !st.inv && !st.acked && <p className="text-sm">Must acknowledge by {fmtDate(st.ackDue)}</p>}
           {!st.responded && !st.reachedTop && !st.inv && <p className="text-sm">Must respond by {fmtDate(st.respondDue)}</p>}
           {st.paused && <p className="text-sm">Escalation is paused while updates keep coming. Next update due by {fmtDate(st.updateDue)}.</p>}
-          {st.reachedTop && <p className="text-sm font-semibold">No higher authority in this system. Next steps outside this system will appear here in a later stage.</p>}
+          {st.reachedTop && <div className="text-sm"><p className="font-semibold">No higher authority in this system.</p>{role === "Citizen" && <button className={btnMain + " w-full mt-2"} onClick={() => setPage("legal")}>See next steps outside this system</button>}</div>}
         </section>
       )}
 
@@ -188,6 +181,8 @@ export default function App() {
           </div>
         </section>
       )}
+
+      </>}
 
       {role === "Admin" && (
         <section className="space-y-3 border-t border-slate-300 pt-4">

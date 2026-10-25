@@ -1,4 +1,5 @@
 import { computeState } from "./escalation";
+import { computeFlags } from "./flags";
 
 // One place decides what each role may see. Every screen gets its data from here,
 // so a field that is not returned here cannot show up on screen by mistake.
@@ -56,8 +57,8 @@ export function complaintView(role, events, id, now) {
   const f = evs[0].data;
   const approved = [...evs].reverse().find((e) => e.type === "redaction_approved");
   let head = { category: f.category, department: f.department, office: f.office };
-  if (role === "Citizen") head = { ...head, description: f.description, complainant: f.complainant };
-  if (role === "Reviewer") head = { ...head, description: f.description, complainant: f.complainant, witness: f.witness, summary: approved ? approved.data.summary : null, approved: !!approved };
+  if (role === "Citizen") head = { ...head, description: f.description, complainant: f.complainant, report: f.report };
+  if (role === "Reviewer") head = { ...head, description: f.description, complainant: f.complainant, witness: f.witness, report: f.report, aiDraft: f.aiDraft, aiMode: f.aiMode, flags: computeFlags(events, id), summary: approved ? approved.data.summary : null, approved: !!approved };
   if (role === "Office official") head = { ...head, summary: approved ? approved.data.summary : null };
   return { id, head, state: computeState(evs, now), timeline: evs.map((e) => shapeEvent(role, e)) };
 }
